@@ -1,0 +1,210 @@
+{
+  "skill_name": "s5-interview-policy-planner",
+  "today": "2026-03-16",
+  "evals": [
+    {
+      "id": "same_company",
+      "stage": "full",
+      "workbook": "examples/深圳市云动创想科技有限公司项目规划表.xlsx",
+      "minutes": "examples/transcript_sample_04_same_company.txt",
+      "expect": {
+        "success": true,
+        "review_sheet_present": true,
+        "transcript_facts": {
+          "annual_output_wanyuan": 12800,
+          "rd_staff_count": 28,
+          "employee_count": 94,
+          "high_tech_enterprise": true
+        },
+        "review_counts": {
+          "selected_policy_count": 9,
+          "eligible_count": 0,
+          "conditional_count": 1,
+          "insufficient_count": 8
+        }
+      }
+    },
+    {
+      "id": "conflict_sample_01",
+      "stage": "full",
+      "workbook": "examples/深圳市云动创想科技有限公司项目规划表.xlsx",
+      "minutes": "examples/transcript_sample_01.txt",
+      "expect": {
+        "success": true,
+        "review_sheet_present": true,
+        "transcript_facts": {
+          "annual_output_wanyuan": 8000,
+          "rd_ratio_pct": 0,
+          "high_tech_enterprise": false
+        },
+        "review_counts": {
+          "selected_policy_count": 7,
+          "eligible_count": 0,
+          "conditional_count": 1,
+          "insufficient_count": 6
+        }
+      }
+    },
+    {
+      "id": "conflict_sample_02",
+      "stage": "full",
+      "workbook": "examples/深圳市云动创想科技有限公司项目规划表.xlsx",
+      "minutes": "examples/transcript_sample_02.txt",
+      "expect": {
+        "success": true,
+        "review_sheet_present": true,
+        "transcript_facts": {
+          "enterprise_name": "宏达环保包装材料有限公司",
+          "annual_output_wanyuan": 8000,
+          "patent_count_invention": 0,
+          "patent_count_utility_model": 0,
+          "high_tech_enterprise": false
+        },
+        "review_counts": {
+          "selected_policy_count": 7,
+          "eligible_count": 0,
+          "conditional_count": 1,
+          "insufficient_count": 6
+        }
+      }
+    },
+    {
+      "id": "conflict_sample_03",
+      "stage": "full",
+      "workbook": "examples/深圳市云动创想科技有限公司项目规划表.xlsx",
+      "minutes": "examples/transcript_sample_03.txt",
+      "expect": {
+        "success": true,
+        "review_sheet_present": true,
+        "transcript_facts": {
+          "annual_output_wanyuan": 210,
+          "rd_staff_count": 5,
+          "employee_count": null,
+          "patent_count_total": 0
+        },
+        "review_counts": {
+          "selected_policy_count": 2,
+          "eligible_count": 0,
+          "conditional_count": 0,
+          "insufficient_count": 2
+        }
+      }
+    },
+    {
+      "id": "unsupported_template",
+      "stage": "full",
+      "workbook": "examples/企业信息采集表.xlsx",
+      "minutes": "examples/transcript_sample_04_same_company.txt",
+      "expect": {
+        "success": false,
+        "error_contains": "未识别模板"
+      }
+    },
+    {
+      "id": "prepare_conflict_sample_03",
+      "workbook": "examples/深圳市云动创想科技有限公司项目规划表.xlsx",
+      "minutes": "examples/transcript_sample_03.txt",
+      "steps": [
+        {
+          "id": "prepare_only",
+          "stage": "prepare",
+          "expect": {
+            "success": true,
+            "updated_workbook_present": false,
+            "session_status": "pending_confirmation",
+            "pending_question_count": 3,
+            "preview_candidate_count": 20,
+            "transcript_facts": {
+              "annual_output_wanyuan": 210,
+              "rd_staff_count": 5,
+              "employee_count": null
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "prepare_same_company_auto_finalize",
+      "workbook": "examples/深圳市云动创想科技有限公司项目规划表.xlsx",
+      "minutes": "examples/transcript_sample_04_same_company.txt",
+      "steps": [
+        {
+          "id": "prepare_auto_finalize",
+          "stage": "prepare",
+          "expect": {
+            "success": true,
+            "updated_workbook_present": true,
+            "review_sheet_present": true,
+            "session_status": "finalized",
+            "pending_question_count": 0,
+            "preview_candidate_count": 20,
+            "review_counts": {
+              "selected_policy_count": 9,
+              "eligible_count": 0,
+              "conditional_count": 1,
+              "insufficient_count": 8
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "prepare_confirm_finalize",
+      "workbook": "examples/深圳市云动创想科技有限公司项目规划表.xlsx",
+      "minutes": "examples/transcript_sample_03.txt",
+      "steps": [
+        {
+          "id": "prepare_initial",
+          "stage": "prepare",
+          "expect": {
+            "success": true,
+            "updated_workbook_present": false,
+            "session_status": "pending_confirmation",
+            "pending_question_count": 3,
+            "preview_candidate_count": 20
+          }
+        },
+        {
+          "id": "prepare_with_confirmations",
+          "stage": "prepare",
+          "confirmations": {
+            "transcript_facts": {
+              "rd_ratio_pct": 0,
+              "high_tech_enterprise": false,
+              "patent_count_invention": 0,
+              "patent_count_utility_model": 0
+            }
+          },
+          "expect": {
+            "success": true,
+            "updated_workbook_present": false,
+            "session_status": "pending_confirmation",
+            "pending_question_count": 2,
+            "transcript_facts": {
+              "rd_ratio_pct": 0,
+              "high_tech_enterprise": false,
+              "patent_count_invention": 0,
+              "patent_count_utility_model": 0
+            }
+          }
+        },
+        {
+          "id": "finalize_forced",
+          "stage": "finalize",
+          "expect": {
+            "success": true,
+            "updated_workbook_present": true,
+            "review_sheet_present": true,
+            "session_status": "finalized",
+            "review_counts": {
+              "selected_policy_count": 1,
+              "eligible_count": 0,
+              "conditional_count": 0,
+              "insufficient_count": 1
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

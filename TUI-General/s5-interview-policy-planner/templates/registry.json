@@ -1,0 +1,13 @@
+{
+  "templates": [
+    {
+      "id": "project_planning_workbook_v1",
+      "profile": "project_planning_workbook.json",
+      "match": {
+        "sheet_name": "深圳市云动创想科技有限公司",
+        "title_cell": "A1",
+        "title_contains": "项目申报规划表"
+      }
+    }
+  ]
+}

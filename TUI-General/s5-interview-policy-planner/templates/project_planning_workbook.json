@@ -1,0 +1,145 @@
+{
+  "id": "project_planning_workbook_v1",
+  "name": "项目申报规划表",
+  "sheet_name": "深圳市云动创想科技有限公司",
+  "seed_cells": {
+    "enterprise_name": "C2",
+    "registered_capital_text": "C3",
+    "registered_date": "C4",
+    "employee_count_text": "C5",
+    "applied_projects": "C6",
+    "main_business": "C7",
+    "honors": "G2",
+    "address": "G3",
+    "ip_summary": "G4",
+    "industry": "G5"
+  },
+  "top_fields": [
+    {
+      "name": "enterprise_name",
+      "label": "企业名称",
+      "cell": "C2"
+    },
+    {
+      "name": "registered_capital_wanyuan",
+      "label": "注册资金",
+      "cell": "C3",
+      "formatter": "wanyuan_text"
+    },
+    {
+      "name": "registered_date",
+      "label": "注册时间",
+      "cell": "C4",
+      "formatter": "date_text"
+    },
+    {
+      "name": "employee_count",
+      "label": "社保人数",
+      "cell": "C5",
+      "formatter": "people_text"
+    },
+    {
+      "name": "applied_projects",
+      "label": "已申报项目",
+      "cell": "C6"
+    },
+    {
+      "name": "main_business",
+      "label": "公司主营业务及产品",
+      "cell": "C7"
+    },
+    {
+      "name": "honors",
+      "label": "企业资质荣誉",
+      "cell": "G2"
+    },
+    {
+      "name": "address",
+      "label": "注册地址",
+      "cell": "G3"
+    },
+    {
+      "name": "ip_summary",
+      "label": "知识产权情况",
+      "cell": "G4"
+    },
+    {
+      "name": "industry",
+      "label": "所属行业",
+      "cell": "G5"
+    }
+  ],
+  "sections": [
+    {
+      "name": "产业政策-资质认定类",
+      "section_hint": "资质认定类",
+      "title_row": 8,
+      "header_row": 9,
+      "first_data_row": 10,
+      "next_section_title_row": 33,
+      "row_slots": [
+        10,
+        12,
+        15,
+        17,
+        19,
+        21,
+        23,
+        25,
+        27,
+        28,
+        30,
+        31
+      ],
+      "columns": {
+        "序号": 1,
+        "申报部委": 2,
+        "项目名称": 3,
+        "申报时间（预估）": 4,
+        "项目性质": 5,
+        "资助金额": 6,
+        "关键申报条件": 7,
+        "备注": 8
+      }
+    },
+    {
+      "name": "产业政策-资助类",
+      "section_hint": "资助类",
+      "title_row": 33,
+      "header_row": 34,
+      "first_data_row": 35,
+      "next_section_title_row": 53,
+      "row_slots": [
+        35,
+        37,
+        39,
+        41,
+        43,
+        45,
+        47,
+        49,
+        51
+      ],
+      "columns": {
+        "序号": 1,
+        "申报部委": 2,
+        "项目名称": 3,
+        "申报时间（预估）": 4,
+        "项目性质": 5,
+        "资助金额": 6,
+        "关键申报条件": 7,
+        "备注": 8
+      }
+    }
+  ],
+  "review_sheet": {
+    "name": "审核与补采",
+    "headers": [
+      "缺失信息",
+      "为什么需要",
+      "建议追问或材料",
+      "影响政策或单元格",
+      "优先级"
+    ]
+  }
+}
