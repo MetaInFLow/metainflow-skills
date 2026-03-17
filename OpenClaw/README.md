@@ -7,3 +7,4 @@
 当前已收录：
 
 - `s5-interview-policy-planner`: 面向 OpenClaw 的政策规划表匹配技能版本
+- `s28-customer-feedback-opportunity-analyzer`: S28 客户反馈收集与商机识别主技能
