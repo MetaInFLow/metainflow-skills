@@ -1,0 +1,25 @@
+{
+  "roots": {
+    "customer_document_root": "wiki_customer_root_demo",
+    "customer_wiki_root": "wiki_customer_root_demo"
+  },
+  "defaults": {
+    "account_plan_titles": [
+      "Account Plan",
+      "客户计划",
+      "客户档案"
+    ]
+  },
+  "skills": {
+    "feishu-contact": "feishu-contact",
+    "feishu-bitable": "feishu-bitable",
+    "feishu-drive": "feishu-drive",
+    "feishu-doc-writer": "feishu-doc-writer",
+    "feishu-wiki": "feishu-wiki",
+    "feishu-im": "feishu-im",
+    "feishu-card": "feishu-card",
+    "feishu-task": "feishu-task",
+    "feishu-calendar": "feishu-calendar",
+    "feishu-approval": "feishu-approval"
+  }
+}
