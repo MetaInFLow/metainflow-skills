@@ -12,7 +12,6 @@ import uuid
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
-from urllib import error, parse, request
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -66,129 +65,22 @@ def load_feishu_skill_mapping(path: Path | None = None) -> dict[str, Any]:
     return read_json(path or FEISHU_SKILL_MAPPING_PATH)
 
 
-def is_real_feishu_bitable_enabled() -> bool:
-    return getenv_bool("S27_ENABLE_REAL_FEISHU_BITABLE", True)
-
-
-def is_real_feishu_drive_enabled() -> bool:
-    return getenv_bool("S27_ENABLE_REAL_FEISHU_DRIVE", True)
-
-
-def get_feishu_app_credentials() -> tuple[str, str] | None:
-    app_id = os.getenv("FEISHU_APP_ID") or os.getenv("LARK_APP_ID")
-    app_secret = os.getenv("FEISHU_APP_SECRET") or os.getenv("LARK_APP_SECRET")
-    if app_id and app_secret:
-        return app_id, app_secret
-    return None
-
-
-def get_feishu_api_base() -> str:
-    return os.getenv("FEISHU_API_BASE", "https://open.feishu.cn").rstrip("/")
-
-
-def _http_json(method: str, url: str, payload: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> dict[str, Any]:
-    body = None
-    request_headers = {"Content-Type": "application/json; charset=utf-8"}
-    if headers:
-        request_headers.update(headers)
-    if payload is not None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = request.Request(url, data=body, headers=request_headers, method=method)
-    try:
-        with request.urlopen(req, timeout=20) as response:
-            raw = response.read().decode("utf-8")
-    except error.HTTPError as exc:  # pragma: no cover - network dependent
-        detail = exc.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"Feishu API 请求失败：{exc.code} {detail[:300]}") from exc
-    except error.URLError as exc:  # pragma: no cover - network dependent
-        raise RuntimeError(f"Feishu API 网络错误：{exc}") from exc
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
-        raise RuntimeError(f"Feishu API 返回非 JSON：{raw[:300]}") from exc
-
-
-def get_feishu_tenant_access_token() -> str:
-    credentials = get_feishu_app_credentials()
-    if not credentials:
-        raise RuntimeError("缺少飞书应用凭证 FEISHU_APP_ID/FEISHU_APP_SECRET。")
-    app_id, app_secret = credentials
-    payload = _http_json(
-        "POST",
-        f"{get_feishu_api_base()}/open-apis/auth/v3/tenant_access_token/internal",
-        {"app_id": app_id, "app_secret": app_secret},
-    )
-    if payload.get("code") != 0:
-        raise RuntimeError(f"获取 tenant_access_token 失败：{payload}")
-    token = payload.get("tenant_access_token")
-    if not token:
-        raise RuntimeError("飞书返回中缺少 tenant_access_token。")
-    return token
-
-
-def _extract_bitable_fields(record: dict[str, Any]) -> dict[str, Any]:
-    if "fields" in record and isinstance(record["fields"], dict):
-        fields = deep_copy(record["fields"])
-        if record.get("record_id"):
-            fields["record_id"] = record["record_id"]
-        return fields
-    return deep_copy(record)
+def is_openclaw_lark_only_mode() -> bool:
+    return getenv_bool("S27_FEISHU_LARK_ONLY", True)
 
 
 def fetch_bitable_records(table_name: str, view_id: str | None = None) -> list[dict[str, Any]]:
-    if not is_real_feishu_bitable_enabled():
-        return []
-    credentials = get_feishu_app_credentials()
-    if not credentials:
-        return []
-    table_config = load_field_mapping().get("tables", {}).get(table_name) or {}
-    app_token = table_config.get("app_token")
-    table_id = table_config.get("table_id")
-    if not app_token or not table_id or app_token.endswith("_demo") or table_id.endswith("_demo"):
-        return []
-    token = get_feishu_tenant_access_token()
-    query = {"page_size": "500"}
-    final_view_id = view_id or table_config.get("view_id")
-    if final_view_id:
-        query["view_id"] = final_view_id
-    url = (
-        f"{get_feishu_api_base()}/open-apis/bitable/v1/apps/{parse.quote(app_token, safe='')}"
-        f"/tables/{parse.quote(table_id, safe='')}/records?{parse.urlencode(query)}"
-    )
-    payload = _http_json("GET", url, headers={"Authorization": f"Bearer {token}"})
-    if payload.get("code") != 0:
-        raise RuntimeError(f"读取多维表 {table_name} 失败：{payload}")
-    items = ((payload.get("data") or {}).get("items")) or []
-    return [_extract_bitable_fields(item) for item in items]
-
-
-def _normalize_drive_item(item: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "file_token": item.get("token") or item.get("file_token"),
-        "file_name": item.get("name") or item.get("title") or item.get("file_name"),
-        "type": item.get("type"),
-        "parent_token": item.get("parent_token"),
-        "url": item.get("url") or item.get("shortcut_info", {}).get("target_url"),
-        "folder_path": item.get("folder_path") or item.get("path"),
-    }
+    _ = (table_name, view_id)
+    if not is_openclaw_lark_only_mode():
+        raise RuntimeError("S27 禁止直连飞书 API；请通过 openclaw-lark 的 feishu-bitable 执行查询。")
+    return []
 
 
 def fetch_drive_files(page_size: int = 200, folder_token: str | None = None) -> list[dict[str, Any]]:
-    if not is_real_feishu_drive_enabled():
-        return []
-    credentials = get_feishu_app_credentials()
-    if not credentials:
-        return []
-    token = get_feishu_tenant_access_token()
-    query = {"page_size": str(page_size)}
-    if folder_token:
-        query["folder_token"] = folder_token
-    url = f"{get_feishu_api_base()}/open-apis/drive/v1/files?{parse.urlencode(query)}"
-    payload = _http_json("GET", url, headers={"Authorization": f"Bearer {token}"})
-    if payload.get("code") != 0:
-        raise RuntimeError(f"读取飞书 Drive 文件失败：{payload}")
-    items = ((payload.get("data") or {}).get("files")) or ((payload.get("data") or {}).get("items")) or []
-    return [_normalize_drive_item(item) for item in items]
+    _ = (page_size, folder_token)
+    if not is_openclaw_lark_only_mode():
+        raise RuntimeError("S27 禁止直连飞书 API；请通过 openclaw-lark 的 feishu-drive 执行检索。")
+    return []
 
 
 def detect_metainflow_runner() -> list[str]:

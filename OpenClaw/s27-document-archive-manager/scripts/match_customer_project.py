@@ -75,19 +75,14 @@ def load_master_data() -> tuple[list[dict[str, Any]], list[dict[str, Any]], list
     mapping = load_field_mapping()
     seed_data = mapping.get("seed_data", {})
     notes: list[str] = []
-    try:
-        customers = [normalize_customer_record(item) for item in fetch_bitable_records("客户档案表")]
-        projects = [normalize_project_record(item) for item in fetch_bitable_records("项目总表")]
-        contracts = [normalize_contract_record(item) for item in fetch_bitable_records("合同管理表")]
-    except Exception as exc:
-        notes.append(f"feishu-bitable 查询失败，回退到本地 seed_data：{exc}")
-        customers = []
-        projects = []
-        contracts = []
+    customers = [normalize_customer_record(item) for item in fetch_bitable_records("客户档案表")]
+    projects = [normalize_project_record(item) for item in fetch_bitable_records("项目总表")]
+    contracts = [normalize_contract_record(item) for item in fetch_bitable_records("合同管理表")]
     if customers or projects or contracts:
-        notes.append("优先使用 feishu-bitable 主数据进行客户/项目匹配。")
+        notes.append("命中 feishu-bitable 预读取缓存。")
         return customers, projects, contracts, notes
-    notes.append("未检测到可用的 feishu-bitable 连接，回退到本地 seed_data。")
+    notes.append("prepare 阶段不直连飞书 API；当前使用本地 seed_data 进行匹配预判。")
+    notes.append("正式查询与落库由 openclaw-lark 的 feishu-bitable 在执行阶段完成。")
     return (
         [normalize_customer_record(item) for item in seed_data.get("customers", [])],
         [normalize_project_record(item) for item in seed_data.get("projects", [])],
