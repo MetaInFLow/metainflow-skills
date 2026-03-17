@@ -1,0 +1,9 @@
+# macOS
+.DS_Store
+
+# Generated outputs (all skill folders)
+**/output/
+
+# Python caches
+**/__pycache__/
+*.py[cod]
