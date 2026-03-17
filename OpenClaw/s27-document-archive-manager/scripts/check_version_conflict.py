@@ -81,15 +81,13 @@ def check_version_conflict(extracted_document: dict[str, Any], match_result: dic
     expected_file_name = infer_expected_file_name(extracted_document, customer_name, project_id)
     drive_conflicts = []
     drive_notes: list[str] = []
-    try:
-        real_drive_files = fetch_drive_files()
-        if real_drive_files:
-            drive_files = real_drive_files
-            drive_notes.append("优先使用 feishu-drive 实时文件列表进行同名冲突检查。")
-        else:
-            drive_notes.append("未检测到可用的 feishu-drive 连接，回退到本地 drive_files mock。")
-    except Exception as exc:
-        drive_notes.append(f"feishu-drive 搜索失败，回退到本地 drive_files mock：{exc}")
+    real_drive_files = fetch_drive_files()
+    if real_drive_files:
+        drive_files = real_drive_files
+        drive_notes.append("命中 feishu-drive 预读取缓存。")
+    else:
+        drive_notes.append("prepare 阶段不直连飞书 API；当前使用本地 drive_files mock 进行同名冲突预判。")
+        drive_notes.append("正式目录检索与落库由 openclaw-lark 的 feishu-drive 在执行阶段完成。")
     for item in drive_files:
         same_folder = item.get("folder_path") == folder_path
         same_name = expected_file_name and clean_text(item.get("file_name")).lower() == clean_text(expected_file_name).lower()
