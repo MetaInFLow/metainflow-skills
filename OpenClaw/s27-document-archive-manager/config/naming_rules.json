@@ -1,0 +1,32 @@
+{
+  "rules": {
+    "拜访纪要": {
+      "template": "{日期}_拜访纪要_{客户名称}",
+      "auto_version": false
+    },
+    "方案": {
+      "template": "{项目编号}_{版本}_{状态}",
+      "auto_version": true
+    },
+    "报价": {
+      "template": "{项目编号}_报价_{版本}_{状态}",
+      "auto_version": true
+    },
+    "合同": {
+      "template": "{合同编号}_{版本}",
+      "auto_version": false
+    },
+    "交付物": {
+      "template": "{项目编号}_{交付物名称}",
+      "auto_version": false
+    },
+    "验收单": {
+      "template": "{项目编号}_验收确认书",
+      "auto_version": false
+    }
+  },
+  "default": {
+    "template": "{客户名称}_{日期}",
+    "auto_version": false
+  }
+}

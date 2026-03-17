@@ -1,0 +1,148 @@
+{
+  "tables": {
+    "客户档案表": {
+      "app_token": "app_customer_archive_demo",
+      "table_id": "tbl_customer_archive_demo",
+      "key_field": "客户编号"
+    },
+    "项目总表": {
+      "app_token": "app_project_master_demo",
+      "table_id": "tbl_project_master_demo",
+      "key_field": "项目编号"
+    },
+    "文档归档索引表": {
+      "app_token": "app_document_index_demo",
+      "table_id": "tbl_document_index_demo",
+      "key_field": "文件名"
+    },
+    "方案管理表": {
+      "app_token": "app_solution_demo",
+      "table_id": "tbl_solution_demo",
+      "key_field": "项目编号"
+    },
+    "报价管理表": {
+      "app_token": "app_quote_demo",
+      "table_id": "tbl_quote_demo",
+      "key_field": "项目编号"
+    },
+    "合同管理表": {
+      "app_token": "app_contract_demo",
+      "table_id": "tbl_contract_demo",
+      "key_field": "合同编号"
+    },
+    "文档完整性检查表": {
+      "app_token": "app_completeness_demo",
+      "table_id": "tbl_completeness_demo",
+      "key_field": "检查日期"
+    }
+  },
+  "archive_structure": {
+    "拜访纪要": [
+      "02_售前",
+      "拜访纪要"
+    ],
+    "方案": [
+      "02_售前",
+      "方案"
+    ],
+    "报价": [
+      "03_售中",
+      "报价"
+    ],
+    "合同": [
+      "03_售中",
+      "合同"
+    ],
+    "交付物": [
+      "04_交付",
+      "交付物"
+    ],
+    "验收单": [
+      "04_交付",
+      "验收确认书"
+    ],
+    "default": [
+      "99_待分类"
+    ]
+  },
+  "completeness": {
+    "required_document_types": [
+      "方案",
+      "拜访纪要",
+      "报价",
+      "合同",
+      "交付物",
+      "验收单"
+    ]
+  },
+  "seed_data": {
+    "customers": [
+      {
+        "customer_id": "QF-C-0042",
+        "customer_name": "深圳某科技",
+        "aliases": [
+          "深圳某科技公司",
+          "某科技"
+        ],
+        "recent_contact_date": "2026-03-01"
+      },
+      {
+        "customer_id": "QF-C-0099",
+        "customer_name": "深圳市某科技有限公司",
+        "aliases": [
+          "某科技有限公司"
+        ],
+        "recent_contact_date": "2026-02-18"
+      }
+    ],
+    "projects": [
+      {
+        "project_id": "QF-P-0078",
+        "project_name": "深圳某科技高企项目",
+        "customer_id": "QF-C-0042",
+        "project_status": "售前"
+      }
+    ],
+    "contracts": [
+      {
+        "contract_id": "QF-HT-0023",
+        "customer_id": "QF-C-0042",
+        "project_id": "QF-P-0078"
+      }
+    ],
+    "document_index": [
+      {
+        "record_id": "doc_001",
+        "customer_id": "QF-C-0042",
+        "project_id": "QF-P-0078",
+        "document_type": "方案",
+        "version_label": "v2",
+        "document_date": "2026-03-16",
+        "file_name": "QF-P-0078_v2_终稿",
+        "archive_path": "客户文档库/深圳某科技/02_售前/方案"
+      },
+      {
+        "record_id": "doc_002",
+        "customer_id": "QF-C-0042",
+        "project_id": "QF-P-0078",
+        "document_type": "报价",
+        "version_label": "v1",
+        "document_date": "2026-03-10",
+        "file_name": "QF-P-0078_报价_v1_待审",
+        "archive_path": "客户文档库/深圳某科技/03_售中/报价"
+      }
+    ],
+    "drive_files": [
+      {
+        "file_token": "file_drive_only_001",
+        "customer_id": "QF-C-0099",
+        "project_id": "QF-P-0099",
+        "file_name": "QF-P-0099_v1_终稿",
+        "folder_path": "客户文档库/深圳市某科技有限公司/02_售前/方案"
+      }
+    ],
+    "account_plans": {
+      "QF-C-0042": "doc_account_plan_qf_c_0042"
+    }
+  }
+}
