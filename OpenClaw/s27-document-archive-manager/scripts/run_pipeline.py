@@ -145,10 +145,25 @@ def build_table_update_plan(
     naming_result: dict[str, Any],
     account_plan_append: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    field_mapping = load_field_mapping()
+    table_mapping = field_mapping.get("tables", {})
+
+    def with_table_meta(update: dict[str, Any]) -> dict[str, Any]:
+        table_name = update.get("table_name")
+        table_meta = table_mapping.get(table_name, {})
+        if table_meta:
+            update = {
+                **update,
+                "app_token": table_meta.get("app_token"),
+                "table_id": table_meta.get("table_id"),
+                "key_field": table_meta.get("key_field"),
+            }
+        return update
+
     customer = match_result.get("customer") or {}
     project = match_result.get("project") or {}
     operator_name = extracted_document.get("operator_name")
-    document_record = {
+    document_record = with_table_meta({
         "table_name": "文档归档索引表",
         "operation": "upsert",
         "record_lookup": {
@@ -167,11 +182,11 @@ def build_table_update_plan(
             "归档人": operator_name,
             "document_date": extracted_document.get("document_date"),
         },
-    }
+    })
     updates = [document_record]
     if customer.get("customer_id"):
         updates.append(
-            {
+            with_table_meta({
                 "table_name": "客户档案表",
                 "operation": "update",
                 "record_lookup": {"customer_id": customer.get("customer_id")},
@@ -179,11 +194,11 @@ def build_table_update_plan(
                     "最近联系日期": extracted_document.get("document_date") or today_iso(),
                     "最近归档": naming_result.get("normalized_name"),
                 },
-            }
+            })
         )
     if project.get("project_id"):
         updates.append(
-            {
+            with_table_meta({
                 "table_name": "项目总表",
                 "operation": "update",
                 "record_lookup": {"project_id": project.get("project_id")},
@@ -191,7 +206,7 @@ def build_table_update_plan(
                     "最近跟进日期": extracted_document.get("document_date") or today_iso(),
                     "最近归档日期": extracted_document.get("document_date") or today_iso(),
                 },
-            }
+            })
         )
     doc_type = extracted_document.get("document_type")
     type_to_table = {"方案": "方案管理表", "报价": "报价管理表", "合同": "合同管理表"}
@@ -199,7 +214,7 @@ def build_table_update_plan(
         lookup_key = "合同编号" if doc_type == "合同" else "项目编号"
         lookup_value = extracted_document.get("contract_id") if doc_type == "合同" else project.get("project_id")
         updates.append(
-            {
+            with_table_meta({
                 "table_name": type_to_table[doc_type],
                 "operation": "update",
                 "record_lookup": {lookup_key: lookup_value},
@@ -208,11 +223,11 @@ def build_table_update_plan(
                     "版本号" if doc_type != "合同" else "归档状态": naming_result.get("resolved_version") or "已归档",
                     "状态" if doc_type != "合同" else "财务同步标记": extracted_document.get("status_label") or "已归档",
                 },
-            }
+            })
         )
     if account_plan_append.get("status") in {"pending", "lookup_required"}:
         updates.append(
-            {
+            with_table_meta({
                 "table_name": "Account Plan",
                 "operation": "append",
                 "record_lookup": {
@@ -223,7 +238,7 @@ def build_table_update_plan(
                     "source_label": account_plan_append.get("source_label"),
                     "lookup_context": account_plan_append.get("lookup_context"),
                 },
-            }
+            })
         )
     return updates
 
@@ -325,8 +340,10 @@ def build_feishu_skill_plan(
     schema_requirements = build_table_schema_requirements(table_update_plan)
     materialized_updates = materialize_table_updates(table_update_plan)
     calls = []
+    archive_drive_call_id = "archive_source_file"
     calls.append(
         {
+            "call_id": "resolve_archive_actors",
             "skill": mapping["skills"]["feishu-contact"],
             "intent": "resolve_archive_actors",
             "reason": "任何涉及责任人、客户经理和通知对象的写入前，先由 feishu-contact 做 ID 标准化。",
@@ -342,6 +359,7 @@ def build_feishu_skill_plan(
     if action != "cancel":
         calls.append(
             {
+                "call_id": archive_drive_call_id,
                 "skill": mapping["skills"]["feishu-drive"],
                 "intent": "archive_source_file",
                 "reason": "目录、文件、检索和归档统一由 feishu-drive 处理。",
@@ -376,19 +394,27 @@ def build_feishu_skill_plan(
             )
         calls.append(
             {
+                "call_id": "mount_archive_into_customer_tree",
                 "skill": mapping["skills"]["feishu-wiki"],
                 "intent": "mount_archive_into_customer_tree",
                 "reason": "知识树挂载和目录导航统一由 feishu-wiki 管理。",
+                "depends_on": [archive_drive_call_id],
                 "inputs": {
+                    "root_token": mapping["roots"]["customer_wiki_root"],
                     "customer_name": customer_name,
                     "folder_path": naming_result.get("folder_path"),
                     "document_name": naming_result.get("normalized_name"),
                     "project_id": project_id,
+                    "archive_file_ref": {
+                        "from_call_id": archive_drive_call_id,
+                        "expected_fields": ["file_token", "file_url", "folder_token"],
+                    },
                 },
             }
         )
         calls.append(
             {
+                "call_id": "write_archive_business_state",
                 "skill": mapping["skills"]["feishu-bitable"],
                 "intent": "resolve_target_tables_and_schema",
                 "reason": "正式写入前必须先读取当前多维表结构，确认目标表、主键字段与写入字段兼容。",
@@ -418,6 +444,7 @@ def build_feishu_skill_plan(
         if account_plan_append.get("status") in {"pending", "lookup_required"}:
             calls.append(
                 {
+                    "call_id": "locate_account_plan_in_customer_folder",
                     "skill": mapping["skills"]["feishu-drive"],
                     "intent": "locate_account_plan_in_customer_folder",
                     "reason": "Account Plan 先通过 feishu-drive 在客户档案目录中定位。",
@@ -426,6 +453,7 @@ def build_feishu_skill_plan(
             )
             calls.append(
                 {
+                    "call_id": "locate_account_plan_wiki_node",
                     "skill": mapping["skills"]["feishu-wiki"],
                     "intent": "locate_account_plan_wiki_node",
                     "reason": "若文档库检索不足，再通过 feishu-wiki 在客户知识树中定位 Account Plan 节点。",
@@ -434,6 +462,7 @@ def build_feishu_skill_plan(
             )
             calls.append(
                 {
+                    "call_id": "append_account_plan_summary",
                     "skill": mapping["skills"]["feishu-doc-writer"],
                     "intent": "append_account_plan_summary",
                     "reason": "Account Plan 正文追加属于文档正文增量更新，统一走 feishu-doc-writer。",
@@ -442,27 +471,63 @@ def build_feishu_skill_plan(
             )
     calls.append(
         {
+            "call_id": "build_archive_result_card",
             "skill": mapping["skills"]["feishu-card"],
             "intent": "build_archive_result_card",
             "reason": "交互卡片结构由 feishu-card 统一承接。",
+            "depends_on": [archive_drive_call_id, "mount_archive_into_customer_tree"] if action != "cancel" else [],
             "inputs": {
                 "session_id": session_state["session_id"],
                 "action": action,
                 "status": "cancelled" if action == "cancel" else "finalized",
                 "project_id": project_id,
+                "archive_file_ref": {
+                    "from_call_id": archive_drive_call_id,
+                    "expected_fields": ["file_token", "file_url", "folder_url"],
+                }
+                if action != "cancel"
+                else None,
+                "wiki_node_ref": {
+                    "from_call_id": "mount_archive_into_customer_tree",
+                    "expected_fields": ["wiki_url", "node_token"],
+                }
+                if action != "cancel"
+                else None,
             },
         }
     )
     calls.append(
         {
+            "call_id": "send_archive_result",
             "skill": mapping["skills"]["feishu-im"],
             "intent": "send_archive_result",
             "reason": "用户可见的结果统一由 feishu-im 发送。",
+            "depends_on": [archive_drive_call_id, "mount_archive_into_customer_tree", "build_archive_result_card"]
+            if action != "cancel"
+            else ["build_archive_result_card"],
             "inputs": {
                 "target": session_state["inputs"]["thread_id"],
                 "status": "cancelled" if action == "cancel" else "finalized",
                 "session_id": session_state["session_id"],
                 "project_id": project_id,
+                "result_summary": {
+                    "normalized_name": naming_result.get("normalized_name"),
+                    "archive_path": naming_result.get("folder_path"),
+                }
+                if action != "cancel"
+                else None,
+                "archive_file_ref": {
+                    "from_call_id": archive_drive_call_id,
+                    "expected_fields": ["file_url", "folder_url"],
+                }
+                if action != "cancel"
+                else None,
+                "wiki_node_ref": {
+                    "from_call_id": "mount_archive_into_customer_tree",
+                    "expected_fields": ["wiki_url"],
+                }
+                if action != "cancel"
+                else None,
             },
         }
     )
@@ -635,6 +700,7 @@ def finalize(args: argparse.Namespace) -> dict[str, Any]:
     write_json(args.session_dir / "table_update_plan.finalized.json", table_update_plan)
     write_json(args.session_dir / "feishu_skill_plan.json", feishu_skill_plan)
     write_json(args.session_dir / "finalize_result.json", result)
+    write_json(args.session_dir / "table_update_plan.json", state["table_update_plan"])
     write_json(state_path, state)
     return result
 
@@ -721,6 +787,9 @@ def completeness_check(args: argparse.Namespace) -> dict[str, Any]:
                 "reason": "完整性检查结果属于结构化业务状态，应落在 feishu-bitable。",
                 "inputs": {
                     "table_name": "文档完整性检查表",
+                    "app_token": load_field_mapping().get("tables", {}).get("文档完整性检查表", {}).get("app_token"),
+                    "table_id": load_field_mapping().get("tables", {}).get("文档完整性检查表", {}).get("table_id"),
+                    "key_field": load_field_mapping().get("tables", {}).get("文档完整性检查表", {}).get("key_field"),
                     "operation": "insert",
                     "fields": {
                         "客户编号": (customer or {}).get("customer_id"),
@@ -749,7 +818,9 @@ def completeness_check(args: argparse.Namespace) -> dict[str, Any]:
         ],
     }
     write_json(output_dir / "completeness_check_result.json", result)
-    write_json(output_dir / "feishu_skill_plan.json", feishu_skill_plan)
+    # Keep completeness output isolated so it cannot clobber the archive finalize plan
+    # when the caller reuses the same output directory after a successful archive.
+    write_json(output_dir / "feishu_skill_plan.completeness.json", feishu_skill_plan)
     return result
 
 
