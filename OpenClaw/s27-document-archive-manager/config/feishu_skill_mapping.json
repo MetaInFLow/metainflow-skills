@@ -4,6 +4,7 @@
     "customer_wiki_root": "TgoLw89FXi1XPEkRYKCcfiKjnve"
   },
   "defaults": {
+    "archive_execution_mode": "wiki_docx_only",
     "account_plan_titles": [
       "Account Plan",
       "客户计划",
@@ -11,13 +12,16 @@
     ]
   },
   "skills": {
-    "feishu-contact": "feishu-contact",
+    "feishu-contact": "feishu_search_user",
     "feishu-bitable": "feishu-bitable",
-    "feishu-drive": "feishu-drive",
-    "feishu-doc-writer": "feishu-doc-writer",
-    "feishu-wiki": "feishu-wiki",
-    "feishu-im": "feishu-im",
-    "feishu-card": "feishu-card",
+    "feishu-drive": "feishu_drive_file",
+    "feishu-doc-create": "feishu-create-doc",
+    "feishu-doc-update": "feishu-update-doc",
+    "feishu-doc-fetch": "feishu-fetch-doc",
+    "feishu-wiki": "feishu_wiki_space_node",
+    "feishu-im": "feishu_im_user_message",
+    "feishu-search-doc-wiki": "feishu_search_doc_wiki",
+    "feishu-card": "feishu_im_user_message",
     "feishu-task": "feishu-task",
     "feishu-calendar": "feishu-calendar",
     "feishu-approval": "feishu-approval"

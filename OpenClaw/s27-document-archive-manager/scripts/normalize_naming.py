@@ -13,8 +13,10 @@ def render_name(template: str, values: dict[str, Any]) -> str:
 
 
 def resolve_folder_segments(document_type: str, customer_name: str) -> list[str]:
-    mapping = load_field_mapping().get("archive_structure", {})
-    customer_root = ["客户文档库", customer_name]
+    field_mapping = load_field_mapping()
+    mapping = field_mapping.get("archive_structure", {})
+    root_segments = list(field_mapping.get("archive_root_segments") or [])
+    customer_root = root_segments + [customer_name]
     route = mapping.get(document_type) or mapping.get("default") or []
     return customer_root + route
 
