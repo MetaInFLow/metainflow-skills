@@ -6,7 +6,7 @@
 功能：
 1. 基于空表模板生成单 sheet 规划表
 2. 支持仅填充企业信息，或填充企业信息 + 资质认定类/资助类项目
-3. 输出文件统一规范到当前项目的 output/ 目录，文件名自动添加公司名前缀
+3. 输出文件统一规范到当前项目的 output/时间戳子目录，文件名自动添加公司名前缀
 
 调用方式：
   方式1（仅填企业信息）：
@@ -22,6 +22,7 @@ import math
 import os
 import re
 import sys
+from datetime import datetime
 import unicodedata
 from copy import copy, deepcopy
 
@@ -61,6 +62,7 @@ DEFAULT_TEMPLATE_FILE = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "references", "公司项目规划表_空表.xlsx")
 )
 DEFAULT_OUTPUT_FILENAME = "项目申报规划表.xlsx"
+OUTPUT_TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
 QUALIFICATION_TITLE = "①产业政策-资质认定类"
 FUNDING_TITLE = "②产业政策-资助类"
 QUALIFICATION_TITLE_ROW = 8
@@ -235,9 +237,21 @@ def _prefix_output_filename(filename, company_name):
     return basename if basename.startswith(prefix) else f"{prefix}{basename}"
 
 
+def _build_run_output_dir(project_output_dir):
+    timestamp = datetime.now().strftime(OUTPUT_TIMESTAMP_FORMAT)
+    return os.path.join(project_output_dir, timestamp)
+
+
+def _join_if_present(base_dir, relative_dir):
+    if relative_dir in {"", ".", os.curdir}:
+        return base_dir
+    return os.path.join(base_dir, relative_dir)
+
+
 def _resolve_output_path(output_path, company_name):
     project_root = os.path.abspath(os.getcwd())
     project_output_dir = os.path.join(project_root, "output")
+    run_output_dir = _build_run_output_dir(project_output_dir)
     normalized = os.path.normpath(output_path or DEFAULT_OUTPUT_FILENAME)
     basename = os.path.basename(normalized)
     dirname = os.path.dirname(normalized)
@@ -252,14 +266,19 @@ def _resolve_output_path(output_path, company_name):
             within_output_dir = os.path.commonpath([project_output_dir, normalized]) == project_output_dir
         except ValueError:
             within_output_dir = False
-        target_dir = os.path.dirname(normalized) if within_output_dir else project_output_dir
+        if within_output_dir:
+            relative_dir = os.path.dirname(os.path.relpath(normalized, project_output_dir))
+            target_dir = _join_if_present(run_output_dir, relative_dir)
+        else:
+            target_dir = run_output_dir
         return os.path.join(target_dir, prefixed_basename)
 
     first_segment = normalized.split(os.sep, 1)[0]
     if first_segment == "output":
-        target_dir = os.path.join(project_root, dirname)
+        relative_dir = os.path.relpath(dirname, "output")
+        target_dir = _join_if_present(run_output_dir, relative_dir)
     else:
-        target_dir = os.path.join(project_output_dir, dirname)
+        target_dir = _join_if_present(run_output_dir, dirname)
     return os.path.join(target_dir, prefixed_basename)
 
 
