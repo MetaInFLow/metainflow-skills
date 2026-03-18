@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "scripts" / "run_pipeline.py"
 EXAMPLES = ROOT / "examples"
+FEISHU_MAPPING = ROOT / "config" / "feishu_skill_mapping.json"
 
 
 def run_pipeline(tmp_path: Path, *args: str) -> dict:
@@ -18,8 +20,51 @@ def run_pipeline(tmp_path: Path, *args: str) -> dict:
         text=True,
         capture_output=True,
         cwd=ROOT,
+        env={
+            **__import__("os").environ,
+            "S27_ALLOW_DEMO_FEISHU_ROOTS": "1",
+        },
     )
     return json.loads(completed.stdout)
+
+
+def test_prepare_rejects_demo_feishu_roots_without_override(tmp_path: Path) -> None:
+    output_dir = tmp_path / "prepare-demo-roots-blocked"
+    original_mapping = FEISHU_MAPPING.read_text(encoding="utf-8")
+    demo_mapping = json.loads(original_mapping)
+    demo_mapping["roots"]["customer_document_root"] = "wiki_customer_root_demo"
+    demo_mapping["roots"]["customer_wiki_root"] = "wiki_customer_root_demo"
+    FEISHU_MAPPING.write_text(json.dumps(demo_mapping, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(RUNNER),
+                "--stage",
+                "prepare",
+                "--source",
+                str(EXAMPLES / "visit_minutes_sample.txt"),
+                "--source-type",
+                "file",
+                "--operator-id",
+                "u-001",
+                "--operator-name",
+                "王工",
+                "--thread-id",
+                "thread-001",
+                "--output-dir",
+                str(output_dir),
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+            cwd=ROOT,
+            env={key: value for key, value in os.environ.items() if key != "S27_ALLOW_DEMO_FEISHU_ROOTS"},
+        )
+    finally:
+        FEISHU_MAPPING.write_text(original_mapping, encoding="utf-8")
+    assert completed.returncode != 0
+    assert "禁止使用 demo 飞书根目录执行真实归档" in completed.stderr
 
 
 def test_prepare_visit_minutes_generates_card_payload(tmp_path: Path) -> None:
@@ -50,6 +95,14 @@ def test_prepare_visit_minutes_generates_card_payload(tmp_path: Path) -> None:
     assert "## 客户反馈" in result["extracted_document"]["minutes_markdown"]
     assert result["extracted_document"]["action_items_structured"][0]["owner"] == "待确认"
     assert result["account_plan_append"]["lookup_context"]["preferred_folder_segments"][-1] == "01_客户档案"
+    preview = json.loads((output_dir / "feishu_skill_plan.preview.json").read_text(encoding="utf-8"))
+    assert preview["skill_calls"][1]["intent"] == "resolve_target_tables_and_schema"
+    assert preview["skill_calls"][1]["inputs"]["candidate_tables"][0]["table_name"] == "文档归档索引表"
+    assert "文档标题" in preview["skill_calls"][1]["inputs"]["candidate_tables"][0]["required_fields"]
+    assert preview["skill_calls"][1]["inputs"]["candidate_tables"][0]["table_id"] == "tblAkcWkPQtI2A0T"
+    assert "customer_id" not in preview["skill_calls"][1]["inputs"]["candidate_tables"][0]["required_fields"]
+    assert "归档路径" not in preview["skill_calls"][1]["inputs"]["candidate_tables"][0]["required_fields"]
+    assert "版本号" not in preview["skill_calls"][1]["inputs"]["candidate_tables"][0]["required_fields"]
 
 
 def test_prepare_proposal_detects_version_conflict(tmp_path: Path) -> None:
@@ -113,6 +166,8 @@ def test_finalize_save_as_new_version_updates_naming(tmp_path: Path) -> None:
     execution_plan = json.loads((output_dir / "feishu_skill_plan.json").read_text(encoding="utf-8"))
     assert execution_plan["action"] == "save_as_new_version"
     assert execution_plan["skill_calls"][0]["skill"] == "feishu-contact"
+    write_call = next(call for call in execution_plan["skill_calls"] if call["intent"] == "write_archive_business_state")
+    assert write_call["inputs"]["updates"][0]["fields"]["版本号"] == "v3"
     assert any(call["intent"] == "locate_account_plan_in_customer_folder" for call in execution_plan["skill_calls"]) is False
 
 
@@ -188,9 +243,21 @@ def test_finalize_minutes_plan_contains_account_plan_lookup_calls(tmp_path: Path
     )
     execution_plan = json.loads((output_dir / "feishu_skill_plan.json").read_text(encoding="utf-8"))
     intents = [call["intent"] for call in execution_plan["skill_calls"]]
+    assert "resolve_target_tables_and_schema" in intents
     assert "locate_account_plan_in_customer_folder" in intents
     assert "locate_account_plan_wiki_node" in intents
     assert "append_account_plan_summary" in intents
+    schema_call = next(call for call in execution_plan["skill_calls"] if call["intent"] == "resolve_target_tables_and_schema")
+    assert schema_call["inputs"]["blocking_on_missing_fields"] is True
+    write_call = next(call for call in execution_plan["skill_calls"] if call["intent"] == "write_archive_business_state")
+    assert write_call["inputs"]["schema_validation_required"] is True
+    assert write_call["inputs"]["updates"][0]["record_lookup"]["文档标题"] == "20260315_拜访纪要_深圳某科技"
+    assert write_call["inputs"]["updates"][0]["fields"]["是否最终版"] is True
+    assert "customer_id" not in write_call["inputs"]["updates"][0]["record_lookup"]
+    assert "版本" not in write_call["inputs"]["updates"][0]["fields"]
+    assert "关联项目" not in write_call["inputs"]["updates"][0]["fields"]
+    assert "归档路径" not in write_call["inputs"]["updates"][0]["fields"]
+    assert "版本号" not in write_call["inputs"]["updates"][0]["fields"]
 
 
 def test_completeness_check_marks_blocking(tmp_path: Path) -> None:
@@ -215,7 +282,9 @@ def test_completeness_check_marks_blocking(tmp_path: Path) -> None:
     assert result["is_blocking_closeout"] is True
     assert "交付物" in result["missing_items"]
     feishu_skill_plan = json.loads((output_dir / "feishu_skill_plan.json").read_text(encoding="utf-8"))
-    assert feishu_skill_plan["skill_calls"][0]["skill"] == "feishu-bitable"
+    assert feishu_skill_plan["skill_calls"][0]["intent"] == "resolve_target_tables_and_schema"
+    assert feishu_skill_plan["skill_calls"][1]["skill"] == "feishu-bitable"
+    assert feishu_skill_plan["skill_calls"][1]["inputs"]["schema_validation_required"] is True
 
 
 def test_completeness_check_accepts_customer_and_project_ids(tmp_path: Path) -> None:

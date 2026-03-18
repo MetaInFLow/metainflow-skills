@@ -15,6 +15,7 @@ from common import (
     load_feishu_skill_mapping,
     make_session_id,
     now_iso,
+    require_real_feishu_roots,
     read_json,
     today_iso,
     write_json,
@@ -46,6 +47,98 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def build_table_schema_requirements(table_updates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    mapping = load_field_mapping().get("tables", {})
+    requirements: list[dict[str, Any]] = []
+    for update in materialize_table_updates(table_updates):
+        table_name = update.get("table_name")
+        if not table_name or table_name not in mapping:
+            continue
+        table_config = mapping[table_name]
+        record_lookup = update.get("record_lookup") or {}
+        fields = update.get("fields") or {}
+        required_fields: list[str] = []
+        for field_name in [*record_lookup.keys(), *fields.keys()]:
+            if field_name and field_name not in required_fields:
+                required_fields.append(field_name)
+        requirements.append(
+            {
+                "table_name": table_name,
+                "app_token": table_config.get("app_token"),
+                "table_id": table_config.get("table_id"),
+                "key_field": table_config.get("key_field"),
+                "operation": update.get("operation"),
+                "required_fields": required_fields,
+                "record_lookup_fields": list(record_lookup.keys()),
+                "update_fields": list(fields.keys()),
+            }
+        )
+    return requirements
+
+
+def build_table_schema_requirement(
+    table_name: str,
+    operation: str,
+    record_lookup: dict[str, Any],
+    fields: dict[str, Any],
+) -> dict[str, Any]:
+    mapping = load_field_mapping().get("tables", {})
+    table_config = mapping.get(table_name, {})
+    required_fields: list[str] = []
+    for field_name in [*record_lookup.keys(), *fields.keys()]:
+        if field_name and field_name not in required_fields:
+            required_fields.append(field_name)
+    return {
+        "table_name": table_name,
+        "app_token": table_config.get("app_token"),
+        "table_id": table_config.get("table_id"),
+        "key_field": table_config.get("key_field"),
+        "operation": operation,
+        "required_fields": required_fields,
+        "record_lookup_fields": list(record_lookup.keys()),
+        "update_fields": list(fields.keys()),
+    }
+
+
+def materialize_table_update(update: dict[str, Any]) -> dict[str, Any]:
+    mapping = load_field_mapping().get("tables", {})
+    table_name = update.get("table_name")
+    table_config = mapping.get(table_name, {})
+    lookup_aliases = table_config.get("lookup_field_aliases", {})
+    field_aliases = table_config.get("field_aliases", {})
+    static_fields = table_config.get("static_fields", {})
+    record_lookup = update.get("record_lookup") or {}
+    fields = update.get("fields") or {}
+
+    mapped_lookup: dict[str, Any] = {}
+    for key, value in record_lookup.items():
+        target_key = lookup_aliases.get(key, key)
+        if target_key and value is not None:
+            mapped_lookup[target_key] = value
+
+    mapped_fields: dict[str, Any] = {}
+    for key, value in fields.items():
+        target_key = field_aliases.get(key, key)
+        if target_key and value is not None:
+            mapped_fields[target_key] = value
+
+    if static_fields:
+        mapped_fields.update(static_fields)
+
+    key_field = table_config.get("key_field")
+    if key_field and key_field not in mapped_lookup and key_field in mapped_fields:
+        mapped_lookup = {key_field: mapped_fields[key_field], **mapped_lookup}
+
+    materialized = deep_copy(update)
+    materialized["record_lookup"] = mapped_lookup
+    materialized["fields"] = mapped_fields
+    return materialized
+
+
+def materialize_table_updates(table_updates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [materialize_table_update(update) for update in table_updates]
+
+
 def build_table_update_plan(
     extracted_document: dict[str, Any],
     match_result: dict[str, Any],
@@ -68,7 +161,7 @@ def build_table_update_plan(
             "文件名": naming_result.get("normalized_name"),
             "文档类型": extracted_document.get("document_type"),
             "版本": naming_result.get("resolved_version"),
-            "归档路径": naming_result.get("folder_path"),
+            "归档路径": naming_result.get("archive_url"),
             "关联项目": project.get("project_id") or extracted_document.get("project_id"),
             "归档时间": now_iso(),
             "归档人": operator_name,
@@ -111,7 +204,7 @@ def build_table_update_plan(
                 "operation": "update",
                 "record_lookup": {lookup_key: lookup_value},
                 "fields": {
-                    "归档路径": naming_result.get("folder_path"),
+                    "归档路径": naming_result.get("archive_url"),
                     "版本号" if doc_type != "合同" else "归档状态": naming_result.get("resolved_version") or "已归档",
                     "状态" if doc_type != "合同" else "财务同步标记": extracted_document.get("status_label") or "已归档",
                 },
@@ -139,11 +232,13 @@ def build_prepare_feishu_skill_plan(
     session_state: dict[str, Any],
     naming_result: dict[str, Any],
     conflict_result: dict[str, Any],
+    table_update_plan: list[dict[str, Any]],
 ) -> dict[str, Any]:
     mapping = load_feishu_skill_mapping()
     customer = (session_state.get("match_result") or {}).get("customer") or {}
     project = (session_state.get("match_result") or {}).get("project") or {}
     extracted = session_state.get("extracted_document") or {}
+    schema_requirements = build_table_schema_requirements(table_update_plan)
     calls = [
         {
             "skill": mapping["skills"]["feishu-contact"],
@@ -154,6 +249,18 @@ def build_prepare_feishu_skill_plan(
                 "operator_name": extracted.get("operator_name"),
                 "customer_manager_hint": customer.get("customer_name"),
                 "project_id": project.get("project_id"),
+            },
+        },
+        {
+            "skill": mapping["skills"]["feishu-bitable"],
+            "intent": "resolve_target_tables_and_schema",
+            "reason": "执行前先读取多维表表结构，确认目标表、主键字段和必需字段是否存在。",
+            "inputs": {
+                "mode": "prepare_precheck",
+                "candidate_tables": schema_requirements,
+                "customer_id": customer.get("customer_id"),
+                "project_id": project.get("project_id"),
+                "document_type": extracted.get("document_type"),
             },
         },
         {
@@ -215,6 +322,8 @@ def build_feishu_skill_plan(
     project_id = ((session_state.get("match_result") or {}).get("project") or {}).get("project_id") or (
         session_state.get("extracted_document") or {}
     ).get("project_id")
+    schema_requirements = build_table_schema_requirements(table_update_plan)
+    materialized_updates = materialize_table_updates(table_update_plan)
     calls = []
     calls.append(
         {
@@ -281,12 +390,28 @@ def build_feishu_skill_plan(
         calls.append(
             {
                 "skill": mapping["skills"]["feishu-bitable"],
+                "intent": "resolve_target_tables_and_schema",
+                "reason": "正式写入前必须先读取当前多维表结构，确认目标表、主键字段与写入字段兼容。",
+                "inputs": {
+                    "mode": "finalize_prewrite_validation",
+                    "candidate_tables": schema_requirements,
+                    "customer_id": customer_id,
+                    "project_id": project_id,
+                    "document_type": session_state["extracted_document"].get("document_type"),
+                    "blocking_on_missing_fields": True,
+                },
+            }
+        )
+        calls.append(
+            {
+                "skill": mapping["skills"]["feishu-bitable"],
                 "intent": "write_archive_business_state",
                 "reason": "所有结构化业务状态统一落在 feishu-bitable。",
                 "inputs": {
-                    "updates": table_update_plan,
+                    "updates": materialized_updates,
                     "customer_id": customer_id,
                     "project_id": project_id,
+                    "schema_validation_required": True,
                 },
             }
         )
@@ -345,6 +470,7 @@ def build_feishu_skill_plan(
 
 
 def prepare(args: argparse.Namespace) -> dict[str, Any]:
+    require_real_feishu_roots()
     output_dir = ensure_dir(args.output_dir or Path("output") / "s27-document-archive-manager" / make_session_id())
     session_id = make_session_id()
     extracted_document = extract_document_facts(
@@ -403,7 +529,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         confirmation_token,
         output_dir / "card_payload.json",
     )
-    feishu_skill_preview = build_prepare_feishu_skill_plan(state, naming_result, conflict_result)
+    feishu_skill_preview = build_prepare_feishu_skill_plan(state, naming_result, conflict_result, table_update_plan)
     write_json(output_dir / "feishu_skill_plan.preview.json", feishu_skill_preview)
     prepare_result = {
         "status": (
@@ -457,6 +583,7 @@ def finalize(args: argparse.Namespace) -> dict[str, Any]:
         write_json(state_path, state)
         return result
 
+    require_real_feishu_roots()
     conflict_result = state["conflict_result"]
     naming_result = deep_copy(state["naming_result"])
     if conflict_result.get("blocking_conflict") and args.action not in {"overwrite", "save_as_new_version"}:
@@ -473,16 +600,23 @@ def finalize(args: argparse.Namespace) -> dict[str, Any]:
             args.session_dir / "naming_result.finalized.json",
             forced_version_label=next_version,
         )
+    table_update_plan = build_table_update_plan(
+        state["extracted_document"],
+        state["match_result"],
+        naming_result,
+        state["account_plan_append"],
+    )
     state["status"] = "finalized"
     state["selected_conflict_action"] = args.action
     state["naming_result"] = naming_result
+    state["table_update_plan"] = table_update_plan
     state["finalized_at"] = now_iso()
     state["finalize_hash"] = hash_payload({"action": args.action, "naming_result": naming_result})
     feishu_skill_plan = build_feishu_skill_plan(
         state,
         args.action,
         naming_result,
-        state["table_update_plan"],
+        table_update_plan,
         state["account_plan_append"],
     )
     result = {
@@ -498,6 +632,7 @@ def finalize(args: argparse.Namespace) -> dict[str, Any]:
         },
         "resolved_naming": naming_result,
     }
+    write_json(args.session_dir / "table_update_plan.finalized.json", table_update_plan)
     write_json(args.session_dir / "feishu_skill_plan.json", feishu_skill_plan)
     write_json(args.session_dir / "finalize_result.json", result)
     write_json(state_path, state)
@@ -555,6 +690,33 @@ def completeness_check(args: argparse.Namespace) -> dict[str, Any]:
         "skill_calls": [
             {
                 "skill": load_feishu_skill_mapping()["skills"]["feishu-bitable"],
+                "intent": "resolve_target_tables_and_schema",
+                "reason": "写入完整性检查结果前，先确认目标表存在且字段结构满足写入要求。",
+                "inputs": {
+                    "mode": "completeness_prewrite_validation",
+                    "candidate_tables": [
+                        build_table_schema_requirement(
+                            "文档完整性检查表",
+                            "insert",
+                            {},
+                            {
+                                "客户编号": (customer or {}).get("customer_id"),
+                                "项目编号": (project or {}).get("project_id"),
+                                "检查日期": today_iso(),
+                                "已归档项": existing_types,
+                                "缺失项": missing,
+                                "责任人": args.operator_name,
+                                "是否阻塞结项": bool(missing),
+                            },
+                        )
+                    ],
+                    "customer_id": (customer or {}).get("customer_id"),
+                    "project_id": (project or {}).get("project_id"),
+                    "blocking_on_missing_fields": True,
+                },
+            },
+            {
+                "skill": load_feishu_skill_mapping()["skills"]["feishu-bitable"],
                 "intent": "write_completeness_check_result",
                 "reason": "完整性检查结果属于结构化业务状态，应落在 feishu-bitable。",
                 "inputs": {
@@ -569,6 +731,7 @@ def completeness_check(args: argparse.Namespace) -> dict[str, Any]:
                         "责任人": args.operator_name,
                         "是否阻塞结项": bool(missing),
                     },
+                    "schema_validation_required": True,
                 },
             },
             {

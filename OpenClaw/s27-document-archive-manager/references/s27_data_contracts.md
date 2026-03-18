@@ -60,6 +60,22 @@
 - `feishu_skill_plan_preview`
 - `prepare_hash`
 
+## `TableSchemaRequirement`
+
+- `table_name`
+- `app_token`
+- `table_id`
+- `key_field`
+- `operation`
+- `required_fields`
+- `record_lookup_fields`
+- `update_fields`
+
+补充约束：
+
+- `required_fields` 必须基于 materialized 后的真实写入字段生成，不能包含被字段映射裁掉的内部字段。
+- 空值字段不进入 `record_lookup_fields` / `update_fields`。
+
 ## `FinalizeResult`
 
 - `status`
@@ -81,3 +97,5 @@
   - `intent`
   - `reason`
   - `inputs`
+    - `candidate_tables[]`（当 intent=`resolve_target_tables_and_schema`）
+    - `schema_validation_required`（当写入依赖前置 schema 校验时）

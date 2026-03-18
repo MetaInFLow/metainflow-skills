@@ -69,6 +69,26 @@ def is_openclaw_lark_only_mode() -> bool:
     return getenv_bool("S27_FEISHU_LARK_ONLY", True)
 
 
+def require_real_feishu_roots() -> dict[str, str]:
+    roots = load_feishu_skill_mapping().get("roots", {})
+    document_root = str(roots.get("customer_document_root") or "").strip()
+    wiki_root = str(roots.get("customer_wiki_root") or "").strip()
+    if getenv_bool("S27_ALLOW_DEMO_FEISHU_ROOTS", False):
+        return {"customer_document_root": document_root, "customer_wiki_root": wiki_root}
+    invalid_reasons: list[str] = []
+    if not document_root or "demo" in document_root.lower():
+        invalid_reasons.append("customer_document_root 未配置真实飞书根节点")
+    if not wiki_root or "demo" in wiki_root.lower():
+        invalid_reasons.append("customer_wiki_root 未配置真实飞书根节点")
+    if invalid_reasons:
+        raise RuntimeError(
+            "S27 当前禁止使用 demo 飞书根目录执行真实归档。"
+            + "；".join(invalid_reasons)
+            + "。请先把 config/feishu_skill_mapping.json 中的 roots 替换为真实飞书 token。"
+        )
+    return {"customer_document_root": document_root, "customer_wiki_root": wiki_root}
+
+
 def fetch_bitable_records(table_name: str, view_id: str | None = None) -> list[dict[str, Any]]:
     _ = (table_name, view_id)
     if not is_openclaw_lark_only_mode():
