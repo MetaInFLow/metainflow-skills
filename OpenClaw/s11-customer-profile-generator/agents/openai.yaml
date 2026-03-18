@@ -1,0 +1,4 @@
+interface:
+  display_name: "Customer Account Plan"
+  short_description: "生成或更新客户Account Plan并同步飞书档案与商机"
+  default_prompt: "Use $customer-profile-generator to create or update a customer Account Plan from enterprise data, Feishu records, and recent interactions."
