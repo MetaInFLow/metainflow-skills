@@ -11,9 +11,28 @@
       "key_field": "项目编号"
     },
     "文档归档索引表": {
-      "app_token": "app_document_index_demo",
-      "table_id": "tbl_document_index_demo",
-      "key_field": "文件名"
+      "app_token": "VgPQbTU9Fazzb2sYH9ecTWzenHe",
+      "table_id": "tblAkcWkPQtI2A0T",
+      "key_field": "文档标题",
+      "lookup_field_aliases": {
+        "customer_id": null,
+        "project_id": null,
+        "document_type": null,
+        "version_label": null
+      },
+      "field_aliases": {
+        "文件名": "文档标题",
+        "文档类型": "文档类型",
+        "版本": "版本号",
+        "归档路径": "归档路径",
+        "关联项目": null,
+        "归档时间": null,
+        "归档人": null,
+        "document_date": null
+      },
+      "static_fields": {
+        "是否最终版": true
+      }
     },
     "方案管理表": {
       "app_token": "app_solution_demo",
