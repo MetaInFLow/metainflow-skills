@@ -30,6 +30,16 @@ git push -u origin Enterprise-<name>
 
 ## 分类说明
 
-- `OpenClaw/`: 适用于 OpenClaw 的 Skills
+- `OpenClaw/`: 适用于 OpenClaw 的 Skills，目录说明见 [OpenClaw/README.md](./OpenClaw/README.md)
 - `Coze/`: 适用于 Coze 的 Skills
 - `TUI-General/`: 适用于通用 TUI / CLI Agent 场景的 Skills
+
+## 当前收录概览
+
+当前 `Enterprise-Beeclaw` 分支主要维护 BeeClaw 场景下可直接使用的 OpenClaw Skills：
+
+- [OpenClaw/s5-interview-policy-planner](./OpenClaw/s5-interview-policy-planner/): 面向 OpenClaw 的政策规划表匹配技能版本
+- [OpenClaw/s11-customer-profile-generator](./OpenClaw/s11-customer-profile-generator/): S11 客户计划生成器，负责创建或更新标准化 Account Plan
+- [OpenClaw/s28-customer-feedback-opportunity-analyzer](./OpenClaw/s28-customer-feedback-opportunity-analyzer/): S28 客户反馈收集与商机识别主技能
+
+如需查看某一分类下的完整说明，优先阅读对应目录内的 `README.md`。
