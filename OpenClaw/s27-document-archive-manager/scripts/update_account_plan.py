@@ -22,6 +22,7 @@ def build_account_plan_append(extracted_document: dict[str, Any], match_result: 
 
     source_label = f"来源：{(extracted_document.get('document_date') or '').replace('-', '')}拜访纪要"
     account_plan_map = load_field_mapping().get("seed_data", {}).get("account_plans", {})
+    archive_root_segments = list(load_field_mapping().get("archive_root_segments") or [])
     skill_mapping = load_feishu_skill_mapping()
     lookup_context = {
         "customer_id": customer.get("customer_id"),
@@ -29,7 +30,8 @@ def build_account_plan_append(extracted_document: dict[str, Any], match_result: 
         "document_root_token": skill_mapping.get("roots", {}).get("customer_document_root"),
         "wiki_root_token": skill_mapping.get("roots", {}).get("customer_wiki_root"),
         "candidate_titles": skill_mapping.get("defaults", {}).get("account_plan_titles", ["Account Plan", "客户计划"]),
-        "preferred_folder_segments": ["客户文档库", customer.get("customer_name") or extracted_document.get("customer_name") or "未匹配客户", "01_客户档案"],
+        "preferred_folder_segments": archive_root_segments
+        + [customer.get("customer_name") or extracted_document.get("customer_name") or "未匹配客户", "01_客户档案"],
     }
     payload = {
         "status": "pending",

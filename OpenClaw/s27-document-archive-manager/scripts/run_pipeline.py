@@ -27,6 +27,31 @@ from update_account_plan import build_account_plan_append
 from write_prepare_state import write_prepare_state
 
 
+def render_account_plan_markdown(account_plan_append: dict[str, Any]) -> str:
+    blocks = account_plan_append.get("append_blocks") or []
+    rendered: list[str] = []
+    for block in blocks:
+        heading = block.get("heading") or "未命名章节"
+        content = block.get("content") or "待补充"
+        rendered.append(f"## {heading}\n\n{content}")
+    return "\n\n".join(rendered)
+
+
+def looks_like_feishu_receive_id(target: str | None) -> tuple[str, str] | None:
+    if not target:
+        return None
+    if target.startswith("oc_"):
+        return ("chat_id", target)
+    if target.startswith("ou_"):
+        return ("open_id", target)
+    return None
+
+
+def build_archive_folder_segments(naming_result: dict[str, Any]) -> list[str]:
+    folder_path = naming_result.get("folder_path") or ""
+    return [segment for segment in str(folder_path).split("/") if segment]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the S27 document archive pipeline.")
     parser.add_argument("--stage", choices=("prepare", "finalize", "completeness-check"), required=True)
@@ -257,13 +282,11 @@ def build_prepare_feishu_skill_plan(
     calls = [
         {
             "skill": mapping["skills"]["feishu-contact"],
-            "intent": "resolve_notification_targets",
-            "reason": "归档确认、冲突通知和后续跟进都需要先标准化责任人与通知对象身份。",
+            "intent": "search_user",
+            "reason": "使用最新 openclaw-lark 协议时，联系人解析通过 feishu_search_user 完成。",
             "inputs": {
-                "operator_id": extracted.get("operator_id"),
-                "operator_name": extracted.get("operator_name"),
-                "customer_manager_hint": customer.get("customer_name"),
-                "project_id": project.get("project_id"),
+                "query": extracted.get("operator_name") or extracted.get("operator_id") or "",
+                "page_size": 10,
             },
         },
         {
@@ -293,25 +316,6 @@ def build_prepare_feishu_skill_plan(
                 "conflict_detected": conflict_result.get("blocking_conflict"),
             },
         },
-        {
-            "skill": mapping["skills"]["feishu-card"],
-            "intent": "build_archive_confirmation_card",
-            "reason": "所有交互消息由 feishu-card 构建结构，业务 Skill 不暴露底层卡片协议。",
-            "inputs": {
-                "mode": "conflict_confirmation" if conflict_result.get("blocking_conflict") else "archive_confirmation",
-                "session_id": session_state.get("session_id"),
-                "confirmation_token": session_state.get("confirmation_token"),
-            },
-        },
-        {
-            "skill": mapping["skills"]["feishu-im"],
-            "intent": "send_archive_confirmation",
-            "reason": "卡片发送与消息触达拆分，发送由 feishu-im 承接。",
-            "inputs": {
-                "thread_id": session_state["inputs"]["thread_id"],
-                "session_id": session_state.get("session_id"),
-            },
-        },
     ]
     return {
         "status": "planned",
@@ -339,198 +343,197 @@ def build_feishu_skill_plan(
     ).get("project_id")
     schema_requirements = build_table_schema_requirements(table_update_plan)
     materialized_updates = materialize_table_updates(table_update_plan)
+    archive_execution_mode = (mapping.get("defaults") or {}).get("archive_execution_mode", "wiki_docx_only")
+    folder_segments = build_archive_folder_segments(naming_result)
     calls = []
+    reply_target = looks_like_feishu_receive_id(session_state["inputs"].get("thread_id"))
     archive_drive_call_id = "archive_source_file"
     calls.append(
         {
             "call_id": "resolve_archive_actors",
             "skill": mapping["skills"]["feishu-contact"],
-            "intent": "resolve_archive_actors",
-            "reason": "任何涉及责任人、客户经理和通知对象的写入前，先由 feishu-contact 做 ID 标准化。",
+            "intent": "search_user",
+            "reason": "最新 openclaw-lark 联系人协议使用 feishu_search_user。",
             "inputs": {
-                "operator_id": session_state["inputs"]["operator_id"],
-                "operator_name": session_state["inputs"]["operator_name"],
-                "thread_id": session_state["inputs"]["thread_id"],
-                "customer_id": customer_id,
-                "project_id": project_id,
+                "query": session_state["inputs"]["operator_name"] or session_state["inputs"]["operator_id"] or customer_name or "",
+                "page_size": 10,
             },
         }
     )
     if action != "cancel":
-        calls.append(
-            {
-                "call_id": archive_drive_call_id,
-                "skill": mapping["skills"]["feishu-drive"],
-                "intent": "archive_source_file",
-                "reason": "目录、文件、检索和归档统一由 feishu-drive 处理。",
-                "inputs": {
-                    "root_token": mapping["roots"]["customer_document_root"],
-                    "customer_name": customer_name,
-                    "folder_segments": naming_result.get("folder_segments"),
-                    "source": session_state["inputs"]["source"],
-                    "normalized_name": naming_result.get("normalized_name"),
-                },
-            }
-        )
-        if session_state["extracted_document"].get("document_type") == "拜访纪要":
+        if archive_execution_mode == "wiki_docx_only":
             calls.append(
                 {
-                    "skill": mapping["skills"]["feishu-doc-writer"],
-                    "intent": "create_or_append_minutes_doc",
-                    "reason": "纪要类正文与摘要页统一由 feishu-doc-writer 负责。",
-                    "inputs": {
-                        "document_name": naming_result.get("normalized_name"),
-                        "summary": session_state["extracted_document"].get("summary"),
-                        "minutes_markdown": session_state["extracted_document"].get("minutes_markdown"),
-                        "topic_summary": session_state["extracted_document"].get("topic_summary", []),
-                        "customer_feedback": session_state["extracted_document"].get("customer_feedback", []),
-                        "requirement_changes": session_state["extracted_document"].get("requirement_changes", []),
-                        "project_progress": session_state["extracted_document"].get("project_progress", []),
-                        "action_items": session_state["extracted_document"].get("action_items", []),
-                        "action_items_structured": session_state["extracted_document"].get("action_items_structured", []),
-                        "risks": session_state["extracted_document"].get("risks", []),
-                    },
-                }
-            )
-        calls.append(
-            {
-                "call_id": "mount_archive_into_customer_tree",
-                "skill": mapping["skills"]["feishu-wiki"],
-                "intent": "mount_archive_into_customer_tree",
-                "reason": "知识树挂载和目录导航统一由 feishu-wiki 管理。",
-                "depends_on": [archive_drive_call_id],
-                "inputs": {
-                    "root_token": mapping["roots"]["customer_wiki_root"],
-                    "customer_name": customer_name,
-                    "folder_path": naming_result.get("folder_path"),
-                    "document_name": naming_result.get("normalized_name"),
-                    "project_id": project_id,
-                    "archive_file_ref": {
-                        "from_call_id": archive_drive_call_id,
-                        "expected_fields": ["file_token", "file_url", "folder_token"],
-                    },
-                },
-            }
-        )
-        calls.append(
-            {
-                "call_id": "write_archive_business_state",
-                "skill": mapping["skills"]["feishu-bitable"],
-                "intent": "resolve_target_tables_and_schema",
-                "reason": "正式写入前必须先读取当前多维表结构，确认目标表、主键字段与写入字段兼容。",
-                "inputs": {
-                    "mode": "finalize_prewrite_validation",
-                    "candidate_tables": schema_requirements,
-                    "customer_id": customer_id,
-                    "project_id": project_id,
-                    "document_type": session_state["extracted_document"].get("document_type"),
-                    "blocking_on_missing_fields": True,
-                },
-            }
-        )
-        calls.append(
-            {
-                "skill": mapping["skills"]["feishu-bitable"],
-                "intent": "write_archive_business_state",
-                "reason": "所有结构化业务状态统一落在 feishu-bitable。",
-                "inputs": {
-                    "updates": materialized_updates,
-                    "customer_id": customer_id,
-                    "project_id": project_id,
-                    "schema_validation_required": True,
-                },
-            }
-        )
-        if account_plan_append.get("status") in {"pending", "lookup_required"}:
-            calls.append(
-                {
-                    "call_id": "locate_account_plan_in_customer_folder",
-                    "skill": mapping["skills"]["feishu-drive"],
-                    "intent": "locate_account_plan_in_customer_folder",
-                    "reason": "Account Plan 先通过 feishu-drive 在客户档案目录中定位。",
-                    "inputs": account_plan_append.get("lookup_context"),
-                }
-            )
-            calls.append(
-                {
-                    "call_id": "locate_account_plan_wiki_node",
+                    "call_id": "resolve_archive_root_node",
                     "skill": mapping["skills"]["feishu-wiki"],
-                    "intent": "locate_account_plan_wiki_node",
-                    "reason": "若文档库检索不足，再通过 feishu-wiki 在客户知识树中定位 Account Plan 节点。",
-                    "inputs": account_plan_append.get("lookup_context"),
+                    "intent": "get_root_wiki_node",
+                    "reason": "先通过 feishu_wiki_space_node.get 读取根 wiki 节点，获取真实的 space_id 和根 node 信息。",
+                    "inputs": {
+                        "action": "get",
+                        "token": mapping["roots"]["customer_wiki_root"],
+                        "obj_type": "wiki",
+                    },
                 }
             )
             calls.append(
                 {
-                    "call_id": "append_account_plan_summary",
-                    "skill": mapping["skills"]["feishu-doc-writer"],
-                    "intent": "append_account_plan_summary",
-                    "reason": "Account Plan 正文追加属于文档正文增量更新，统一走 feishu-doc-writer。",
-                    "inputs": account_plan_append,
+                    "call_id": "resolve_archive_parent_path",
+                    "skill": mapping["skills"]["feishu-wiki"],
+                    "intent": "resolve_archive_parent_path",
+                    "reason": "归档测试只验证 wiki 落点。执行器需要从根节点开始，按 folder_segments 逐层 list/定位父节点，必要时补建缺失目录。",
+                    "depends_on": ["resolve_archive_root_node"],
+                    "inputs": {
+                        "root_token": mapping["roots"]["customer_wiki_root"],
+                        "folder_segments": folder_segments,
+                        "folder_path": naming_result.get("folder_path"),
+                        "create_missing_nodes": True,
+                        "expected_leaf_title": folder_segments[-1] if folder_segments else "",
+                    },
                 }
             )
-    calls.append(
-        {
-            "call_id": "build_archive_result_card",
-            "skill": mapping["skills"]["feishu-card"],
-            "intent": "build_archive_result_card",
-            "reason": "交互卡片结构由 feishu-card 统一承接。",
-            "depends_on": [archive_drive_call_id, "mount_archive_into_customer_tree"] if action != "cancel" else [],
-            "inputs": {
-                "session_id": session_state["session_id"],
-                "action": action,
-                "status": "cancelled" if action == "cancel" else "finalized",
-                "project_id": project_id,
-                "archive_file_ref": {
-                    "from_call_id": archive_drive_call_id,
-                    "expected_fields": ["file_token", "file_url", "folder_url"],
+            calls.append(
+                {
+                    "call_id": "create_archive_docx_in_wiki",
+                    "skill": mapping["skills"]["feishu-wiki"],
+                    "intent": "create_archive_docx_under_parent",
+                    "reason": "在目标父节点下创建 docx 实体节点，这是本轮验收的核心步骤。请调用 feishu_wiki_space_node.create，使用 root node 解析出的 space_id 和目标 parent_node_token。",
+                    "depends_on": ["resolve_archive_parent_path"],
+                    "inputs": {
+                        "root_token": mapping["roots"]["customer_wiki_root"],
+                        "folder_segments": folder_segments,
+                        "folder_path": naming_result.get("folder_path"),
+                        "title": naming_result.get("normalized_name"),
+                        "obj_type": "docx",
+                        "node_type": "origin",
+                        "source_file_path": session_state["inputs"]["source"],
+                        "archive_mode": "wiki_docx_only",
+                    },
                 }
-                if action != "cancel"
-                else None,
-                "wiki_node_ref": {
-                    "from_call_id": "mount_archive_into_customer_tree",
-                    "expected_fields": ["wiki_url", "node_token"],
+            )
+        else:
+            calls.append(
+                {
+                    "call_id": archive_drive_call_id,
+                    "skill": mapping["skills"]["feishu-drive"],
+                    "intent": "upload",
+                    "reason": "最新 openclaw-lark 通过 feishu_drive_file.upload 上传源文件。",
+                    "inputs": {
+                        "action": "upload",
+                        "parent_node": mapping["roots"]["customer_document_root"],
+                        "file_path": session_state["inputs"]["source"],
+                    },
                 }
-                if action != "cancel"
-                else None,
-            },
-        }
-    )
-    calls.append(
-        {
-            "call_id": "send_archive_result",
-            "skill": mapping["skills"]["feishu-im"],
-            "intent": "send_archive_result",
-            "reason": "用户可见的结果统一由 feishu-im 发送。",
-            "depends_on": [archive_drive_call_id, "mount_archive_into_customer_tree", "build_archive_result_card"]
-            if action != "cancel"
-            else ["build_archive_result_card"],
-            "inputs": {
-                "target": session_state["inputs"]["thread_id"],
-                "status": "cancelled" if action == "cancel" else "finalized",
-                "session_id": session_state["session_id"],
-                "project_id": project_id,
-                "result_summary": {
-                    "normalized_name": naming_result.get("normalized_name"),
-                    "archive_path": naming_result.get("folder_path"),
+            )
+            if session_state["extracted_document"].get("document_type") == "拜访纪要":
+                calls.append(
+                    {
+                        "call_id": "create_minutes_doc",
+                        "skill": mapping["skills"]["feishu-doc-create"],
+                        "intent": "create_doc",
+                        "reason": "纪要正文使用 feishu-create-doc 创建到指定 wiki 节点下。",
+                        "inputs": {
+                            "title": naming_result.get("normalized_name"),
+                            "wiki_node": mapping["roots"]["customer_wiki_root"],
+                            "markdown": session_state["extracted_document"].get("minutes_markdown"),
+                        },
+                    }
+                )
+            calls.append(
+                {
+                    "call_id": "mount_archive_into_customer_tree",
+                    "skill": mapping["skills"]["feishu-wiki"],
+                    "intent": "get_root_wiki_node",
+                    "reason": "最新 openclaw-lark 使用 feishu_wiki_space_node.get 解析根 wiki 节点信息。",
+                    "inputs": {
+                        "action": "get",
+                        "token": mapping["roots"]["customer_wiki_root"],
+                        "obj_type": "wiki",
+                    },
                 }
-                if action != "cancel"
-                else None,
-                "archive_file_ref": {
-                    "from_call_id": archive_drive_call_id,
-                    "expected_fields": ["file_url", "folder_url"],
+            )
+            calls.append(
+                {
+                    "call_id": "write_archive_business_state",
+                    "skill": mapping["skills"]["feishu-bitable"],
+                    "intent": "resolve_target_tables_and_schema",
+                    "reason": "正式写入前必须先读取当前多维表结构，确认目标表、主键字段与写入字段兼容。",
+                    "inputs": {
+                        "mode": "finalize_prewrite_validation",
+                        "candidate_tables": schema_requirements,
+                        "customer_id": customer_id,
+                        "project_id": project_id,
+                        "document_type": session_state["extracted_document"].get("document_type"),
+                        "blocking_on_missing_fields": True,
+                    },
                 }
-                if action != "cancel"
-                else None,
-                "wiki_node_ref": {
-                    "from_call_id": "mount_archive_into_customer_tree",
-                    "expected_fields": ["wiki_url"],
+            )
+            calls.append(
+                {
+                    "skill": mapping["skills"]["feishu-bitable"],
+                    "intent": "write_archive_business_state",
+                    "reason": "所有结构化业务状态统一落在 feishu-bitable。",
+                    "inputs": {
+                        "updates": materialized_updates,
+                        "customer_id": customer_id,
+                        "project_id": project_id,
+                        "schema_validation_required": True,
+                    },
                 }
-                if action != "cancel"
-                else None,
-            },
-        }
-    )
+            )
+            if account_plan_append.get("status") in {"pending", "lookup_required"}:
+                calls.append(
+                    {
+                        "call_id": "locate_account_plan_in_customer_folder",
+                        "skill": mapping["skills"]["feishu-search-doc-wiki"],
+                        "intent": "search_account_plan",
+                        "reason": "最新 openclaw-lark 通过 feishu_search_doc_wiki 搜索 Account Plan。",
+                        "inputs": {
+                            "action": "search",
+                            "query": f"{customer_name} Account Plan",
+                            "page_size": 10,
+                        },
+                    }
+                )
+                if account_plan_append.get("target_doc_ref"):
+                    calls.append(
+                        {
+                            "call_id": "append_account_plan_summary",
+                            "skill": mapping["skills"]["feishu-doc-update"],
+                            "intent": "append_account_plan_summary",
+                            "reason": "Account Plan 追加在最新协议中通过 feishu-update-doc append 完成。",
+                            "inputs": {
+                                "doc_id": account_plan_append.get("target_doc_ref"),
+                                "mode": "append",
+                                "markdown": render_account_plan_markdown(account_plan_append),
+                            },
+                        }
+                    )
+    if reply_target:
+        receive_id_type, receive_id = reply_target
+        calls.append(
+            {
+                "call_id": "send_archive_result",
+                "skill": mapping["skills"]["feishu-im"],
+                "intent": "send_result_message",
+                "reason": "当 thread_id 本身就是 openclaw-lark 可识别的聊天目标时，直接通过 IM 工具发送结果文本。",
+                "inputs": {
+                    "action": "send",
+                    "receive_id_type": receive_id_type,
+                    "receive_id": receive_id,
+                    "msg_type": "text",
+                    "content": json.dumps(
+                        {
+                            "text": (
+                                f"S27 {action} 完成\n"
+                                f"文件名：{naming_result.get('normalized_name')}\n"
+                                f"归档路径：{naming_result.get('folder_path')}"
+                            )
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            }
+        )
     return {"status": "planned", "stage": "finalize", "action": action, "business_skill": "S27", "sub_agent": "归档反馈 Agent", "skill_calls": calls}
 
 
@@ -801,18 +804,6 @@ def completeness_check(args: argparse.Namespace) -> dict[str, Any]:
                         "是否阻塞结项": bool(missing),
                     },
                     "schema_validation_required": True,
-                },
-            },
-            {
-                "skill": load_feishu_skill_mapping()["skills"]["feishu-im"],
-                "intent": "send_completeness_alert",
-                "reason": "完整性检查后的提醒与催办统一由 feishu-im 负责。",
-                "inputs": {
-                    "thread_id": args.thread_id,
-                    "customer_id": (customer or {}).get("customer_id"),
-                    "project_id": (project or {}).get("project_id"),
-                    "missing_items": missing,
-                    "is_blocking_closeout": bool(missing),
                 },
             },
         ],

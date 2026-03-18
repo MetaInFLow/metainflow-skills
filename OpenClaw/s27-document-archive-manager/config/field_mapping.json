@@ -55,6 +55,7 @@
       "key_field": "检查日期"
     }
   },
+  "archive_root_segments": [],
   "archive_structure": {
     "拜访纪要": [
       "02_售前",
@@ -138,7 +139,7 @@
         "version_label": "v2",
         "document_date": "2026-03-16",
         "file_name": "QF-P-0078_v2_终稿",
-        "archive_path": "客户文档库/深圳某科技/02_售前/方案"
+        "archive_path": "深圳某科技/02_售前/方案"
       },
       {
         "record_id": "doc_002",
@@ -148,7 +149,7 @@
         "version_label": "v1",
         "document_date": "2026-03-10",
         "file_name": "QF-P-0078_报价_v1_待审",
-        "archive_path": "客户文档库/深圳某科技/03_售中/报价"
+        "archive_path": "深圳某科技/03_售中/报价"
       }
     ],
     "drive_files": [
@@ -157,7 +158,7 @@
         "customer_id": "QF-C-0099",
         "project_id": "QF-P-0099",
         "file_name": "QF-P-0099_v1_终稿",
-        "folder_path": "客户文档库/深圳市某科技有限公司/02_售前/方案"
+        "folder_path": "深圳市某科技有限公司/02_售前/方案"
       }
     ],
     "account_plans": {
